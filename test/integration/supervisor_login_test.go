@@ -63,7 +63,7 @@ func TestSupervisorLogin(t *testing.T) {
 
 		// Either revoke the user's session on the upstream provider, or manipulate the user's session
 		// data in such a way that it should cause the next upstream refresh attempt to fail.
-		breakRefreshSessionData func(t *testing.T, sessionData *psession.PinnipedSession)
+		breakRefreshSessionData func(t *testing.T, sessionData *psession.PinnipedSession, username string)
 	}{
 		{
 			name: "oidc with default username and groups claim settings",
@@ -83,7 +83,7 @@ func TestSupervisorLogin(t *testing.T) {
 				}, idpv1alpha1.PhaseReady)
 			},
 			requestAuthorization: requestAuthorizationUsingBrowserAuthcodeFlow,
-			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession) {
+			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession, _ string) {
 				customSessionData := pinnipedSession.Custom
 				require.Equal(t, psession.ProviderTypeOIDC, customSessionData.ProviderType)
 				require.NotEmpty(t, customSessionData.OIDC.UpstreamRefreshToken)
@@ -119,7 +119,7 @@ func TestSupervisorLogin(t *testing.T) {
 				}, idpv1alpha1.PhaseReady)
 			},
 			requestAuthorization: requestAuthorizationUsingBrowserAuthcodeFlow,
-			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession) {
+			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession, _ string) {
 				customSessionData := pinnipedSession.Custom
 				require.Equal(t, psession.ProviderTypeOIDC, customSessionData.ProviderType)
 				require.NotEmpty(t, customSessionData.OIDC.UpstreamRefreshToken)
@@ -158,7 +158,7 @@ func TestSupervisorLogin(t *testing.T) {
 					false,
 				)
 			},
-			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession) {
+			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession, _ string) {
 				customSessionData := pinnipedSession.Custom
 				require.Equal(t, psession.ProviderTypeOIDC, customSessionData.ProviderType)
 				require.NotEmpty(t, customSessionData.OIDC.UpstreamRefreshToken)
@@ -225,7 +225,7 @@ func TestSupervisorLogin(t *testing.T) {
 					false,
 				)
 			},
-			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession) {
+			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession, _ string) {
 				customSessionData := pinnipedSession.Custom
 				require.Equal(t, psession.ProviderTypeLDAP, customSessionData.ProviderType)
 				require.NotEmpty(t, customSessionData.LDAP.UserDN)
@@ -300,7 +300,7 @@ func TestSupervisorLogin(t *testing.T) {
 					false,
 				)
 			},
-			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession) {
+			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession, _ string) {
 				customSessionData := pinnipedSession.Custom
 				require.Equal(t, psession.ProviderTypeLDAP, customSessionData.ProviderType)
 				require.NotEmpty(t, customSessionData.LDAP.UserDN)
@@ -450,7 +450,7 @@ func TestSupervisorLogin(t *testing.T) {
 					false,
 				)
 			},
-			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession) {
+			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession, _ string) {
 				customSessionData := pinnipedSession.Custom
 				require.Equal(t, psession.ProviderTypeLDAP, customSessionData.ProviderType)
 				require.NotEmpty(t, customSessionData.LDAP.UserDN)
@@ -556,7 +556,7 @@ func TestSupervisorLogin(t *testing.T) {
 					false,
 				)
 			},
-			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession) {
+			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession, _ string) {
 				customSessionData := pinnipedSession.Custom
 				require.Equal(t, psession.ProviderTypeLDAP, customSessionData.ProviderType)
 				require.NotEmpty(t, customSessionData.LDAP.UserDN)
@@ -618,7 +618,7 @@ func TestSupervisorLogin(t *testing.T) {
 					false,
 				)
 			},
-			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession) {
+			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession, _ string) {
 				customSessionData := pinnipedSession.Custom
 				require.Equal(t, psession.ProviderTypeActiveDirectory, customSessionData.ProviderType)
 				require.NotEmpty(t, customSessionData.ActiveDirectory.UserDN)
@@ -694,7 +694,7 @@ func TestSupervisorLogin(t *testing.T) {
 					false,
 				)
 			},
-			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession) {
+			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession, _ string) {
 				customSessionData := pinnipedSession.Custom
 				require.Equal(t, psession.ProviderTypeActiveDirectory, customSessionData.ProviderType)
 				require.NotEmpty(t, customSessionData.ActiveDirectory.UserDN)
@@ -775,7 +775,7 @@ func TestSupervisorLogin(t *testing.T) {
 					false,
 				)
 			},
-			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession) {
+			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession, _ string) {
 				customSessionData := pinnipedSession.Custom
 				require.Equal(t, psession.ProviderTypeActiveDirectory, customSessionData.ProviderType)
 				require.NotEmpty(t, customSessionData.ActiveDirectory.UserDN)
@@ -870,7 +870,7 @@ func TestSupervisorLogin(t *testing.T) {
 					false,
 				)
 			},
-			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession) {
+			breakRefreshSessionData: func(t *testing.T, pinnipedSession *psession.PinnipedSession, _ string) {
 				customSessionData := pinnipedSession.Custom
 				require.Equal(t, psession.ProviderTypeActiveDirectory, customSessionData.ProviderType)
 				require.NotEmpty(t, customSessionData.ActiveDirectory.UserDN)
@@ -938,7 +938,9 @@ func TestSupervisorLogin(t *testing.T) {
 					false,
 				)
 			},
-			breakRefreshSessionData: nil, // TODO change the password to break refresh
+			breakRefreshSessionData: func(t *testing.T, sessionData *psession.PinnipedSession, username string) {
+				changeADTestUserPassword(t, env, username) // this will fail for now
+			},
 			// we can't know the subject ahead of time because we created a new user and don't know their uid,
 			// so skip wantDownstreamIDTokenSubjectToMatch
 			// the ID token Username should have been pulled from the requested UserSearch.Attributes.Username attribute
@@ -1139,7 +1141,7 @@ func testSupervisorLogin(
 	t *testing.T,
 	createIDP func(t *testing.T),
 	requestAuthorization func(t *testing.T, downstreamAuthorizeURL string, downstreamCallbackURL string, username string, password string, httpClient *http.Client),
-	breakRefreshSessionData func(t *testing.T, pinnipedSession *psession.PinnipedSession),
+	breakRefreshSessionData func(t *testing.T, pinnipedSession *psession.PinnipedSession, username string),
 	createTestUser func(t *testing.T) (string, string),
 	deleteTestUser func(t *testing.T, username string),
 	wantDownstreamIDTokenSubjectToMatch string,
@@ -1333,7 +1335,7 @@ func testSupervisorLogin(
 			// Next mutate the part of the session that is used during upstream refresh.
 			pinnipedSession, ok := storedRefreshSession.GetSession().(*psession.PinnipedSession)
 			require.True(t, ok, "should have been able to cast session data to PinnipedSession")
-			breakRefreshSessionData(t, pinnipedSession)
+			breakRefreshSessionData(t, pinnipedSession, username)
 
 			// Then save the mutated Secret back to Kubernetes.
 			// There is no update function, so delete and create again at the same name.
@@ -1597,21 +1599,13 @@ func expectSecurityHeaders(t *testing.T, response *http.Response, expectFositeTo
 	assert.Equal(t, "0", h.Get("Expires"))
 }
 
+// create a fresh test user in AD to use for this test.
 func createFreshADTestUser(t *testing.T, env *testlib.TestEnv) (string, string) {
 	t.Helper()
-	// create a fresh test user in AD to use for this test.
 	// dial tls
-	rootCAs := x509.NewCertPool()
-	success := rootCAs.AppendCertsFromPEM([]byte(env.SupervisorUpstreamActiveDirectory.CABundle))
-	require.True(t, success)
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: rootCAs}
-	dialer := &tls.Dialer{NetDialer: &net.Dialer{Timeout: time.Minute}, Config: tlsConfig}
-	c, err := dialer.DialContext(context.Background(), "tcp", env.SupervisorUpstreamActiveDirectory.Host)
-	require.NoError(t, err)
-	conn := ldap.NewConn(c, true)
-	conn.Start()
+	conn := dialTLS(t, env)
 	// bind
-	err = conn.Bind(env.SupervisorUpstreamActiveDirectory.BindUsername, env.SupervisorUpstreamActiveDirectory.BindPassword)
+	err := conn.Bind(env.SupervisorUpstreamActiveDirectory.BindUsername, env.SupervisorUpstreamActiveDirectory.BindPassword)
 	require.NoError(t, err)
 
 	testUserName := "user-" + createRandomHexString(t, 7) // sAMAccountNames are limited to 20 characters, so this is as long as we can make it.
@@ -1639,9 +1633,43 @@ func createFreshADTestUser(t *testing.T, env *testlib.TestEnv) (string, string) 
 	return testUserName, testUserPassword
 }
 
+// change the user's password to a new one.
+func changeADTestUserPassword(t *testing.T, env *testlib.TestEnv, testUserName string) {
+	conn := dialTLS(t, env)
+	// bind
+	err := conn.Bind(env.SupervisorUpstreamActiveDirectory.BindUsername, env.SupervisorUpstreamActiveDirectory.BindPassword)
+	require.NoError(t, err)
+
+	newTestUserPassword := createRandomAsciiString(t, 20)
+	enc := unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM).NewEncoder()
+	encodedTestUserPassword, err := enc.String("\"" + newTestUserPassword + "\"")
+	require.NoError(t, err)
+
+	userDN := fmt.Sprintf("CN=%s,OU=test-users,%s", testUserName, env.SupervisorUpstreamActiveDirectory.UserSearchBase)
+	m := ldap.NewModifyRequest(userDN, []ldap.Control{})
+	m.Replace("unicodePwd", []string{encodedTestUserPassword})
+	err = conn.Modify(m)
+	require.NoError(t, err)
+	// don't bother to return the new password... we won't be using it, just checking that it's changed.
+}
+
+// delete the test user created for this test
 func deleteTestADUser(t *testing.T, env *testlib.TestEnv, testUserName string) {
 	t.Helper()
-	// delete the test user created for this test
+
+	conn := dialTLS(t, env)
+	// bind
+	err := conn.Bind(env.SupervisorUpstreamActiveDirectory.BindUsername, env.SupervisorUpstreamActiveDirectory.BindPassword)
+	require.NoError(t, err)
+
+	userDN := fmt.Sprintf("CN=%s,OU=test-users,%s", testUserName, env.SupervisorUpstreamActiveDirectory.UserSearchBase)
+	d := ldap.NewDelRequest(userDN, []ldap.Control{})
+	err = conn.Del(d)
+	require.NoError(t, err)
+}
+
+func dialTLS(t *testing.T, env *testlib.TestEnv) *ldap.Conn {
+	t.Helper()
 	// dial tls
 	rootCAs := x509.NewCertPool()
 	success := rootCAs.AppendCertsFromPEM([]byte(env.SupervisorUpstreamActiveDirectory.CABundle))
@@ -1652,14 +1680,7 @@ func deleteTestADUser(t *testing.T, env *testlib.TestEnv, testUserName string) {
 	require.NoError(t, err)
 	conn := ldap.NewConn(c, true)
 	conn.Start()
-	// bind
-	err = conn.Bind(env.SupervisorUpstreamActiveDirectory.BindUsername, env.SupervisorUpstreamActiveDirectory.BindPassword)
-	require.NoError(t, err)
-
-	userDN := fmt.Sprintf("CN=%s,OU=test-users,%s", testUserName, env.SupervisorUpstreamActiveDirectory.UserSearchBase)
-	d := ldap.NewDelRequest(userDN, []ldap.Control{})
-	err = conn.Del(d)
-	require.NoError(t, err)
+	return conn
 }
 
 func createRandomHexString(t *testing.T, length int) string {
