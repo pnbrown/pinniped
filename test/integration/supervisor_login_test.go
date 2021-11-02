@@ -1620,7 +1620,7 @@ func createFreshADTestUser(t *testing.T, env *testlib.TestEnv) (string, string) 
 	require.NoError(t, err)
 
 	// modify password and enable account
-	testUserPassword := createRandomAsciiString(t, 20)
+	testUserPassword := createRandomASCIIString(t, 20)
 	enc := unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM).NewEncoder()
 	encodedTestUserPassword, err := enc.String("\"" + testUserPassword + "\"")
 	require.NoError(t, err)
@@ -1640,7 +1640,7 @@ func changeADTestUserPassword(t *testing.T, env *testlib.TestEnv, testUserName s
 	err := conn.Bind(env.SupervisorUpstreamActiveDirectory.BindUsername, env.SupervisorUpstreamActiveDirectory.BindPassword)
 	require.NoError(t, err)
 
-	newTestUserPassword := createRandomAsciiString(t, 20)
+	newTestUserPassword := createRandomASCIIString(t, 20)
 	enc := unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM).NewEncoder()
 	encodedTestUserPassword, err := enc.String("\"" + newTestUserPassword + "\"")
 	require.NoError(t, err)
@@ -1653,7 +1653,7 @@ func changeADTestUserPassword(t *testing.T, env *testlib.TestEnv, testUserName s
 	// don't bother to return the new password... we won't be using it, just checking that it's changed.
 }
 
-// delete the test user created for this test
+// delete the test user created for this test.
 func deleteTestADUser(t *testing.T, env *testlib.TestEnv, testUserName string) {
 	t.Helper()
 
@@ -1692,7 +1692,7 @@ func createRandomHexString(t *testing.T, length int) string {
 	return randomString
 }
 
-func createRandomAsciiString(t *testing.T, length int) string {
+func createRandomASCIIString(t *testing.T, length int) string {
 	result := ""
 	for {
 		if len(result) >= length {

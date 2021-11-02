@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	provider2 "go.pinniped.dev/internal/oidc/provider"
+
 	"github.com/go-ldap/ldap/v3"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
@@ -1536,7 +1538,11 @@ func TestUpstreamRefresh(t *testing.T) {
 
 			provider := New(*providerConfig)
 			subject := "ldaps://ldap.example.com:8443?base=some-upstream-user-base-dn&sub=c29tZS11cHN0cmVhbS11aWQtdmFsdWU"
-			err := provider.PerformRefresh(context.Background(), testUserSearchResultDNValue, testUserSearchResultUsernameAttributeValue, subject)
+			err := provider.PerformRefresh(context.Background(), provider2.StoredRefreshAttributes{
+				Username: testUserSearchResultUsernameAttributeValue,
+				Subject:  subject,
+				DN:       testUserSearchResultDNValue,
+			})
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				require.Equal(t, tt.wantErr, err.Error())
@@ -1899,6 +1905,152 @@ func TestGetDomainFromDistinguishedName(t *testing.T) {
 				require.NoError(t, err)
 			}
 			require.Equal(t, tt.wantDomain, actualDomain)
+		})
+	}
+}
+
+func TestPwdResetSinceLogin(t *testing.T) {
+	authTime := "2021-11-01T23:43:19.826433579Z"       // this is the format that fosite automatically stores
+	pwdResetTimeAfterAuthTime := "132803468800000000"  // Nov 2
+	pwdResetTimeBeforeAuthTime := "132801740800000000" // Oct 31
+	tests := []struct {
+		name       string
+		authTime   string
+		entry      *ldap.Entry
+		wantResult bool
+		wantErr    string
+	}{
+		{
+			name:     "happy path where password has not been reset since login",
+			authTime: authTime,
+			entry: &ldap.Entry{
+				DN: "some-dn",
+				Attributes: []*ldap.EntryAttribute{
+					{
+						Name:   "pwdLastSet",
+						Values: []string{pwdResetTimeBeforeAuthTime},
+					},
+				},
+			},
+			wantResult: false,
+		},
+		{
+			name:     "happy path where password has been reset since login",
+			authTime: authTime,
+			entry: &ldap.Entry{
+				DN: "some-dn",
+				Attributes: []*ldap.EntryAttribute{
+					{
+						Name:   "pwdLastSet",
+						Values: []string{pwdResetTimeAfterAuthTime},
+					},
+				},
+			},
+			wantResult: true,
+		},
+		{
+			name:     "auth time is in the wrong format",
+			authTime: "01 Nov 21 15:04 MST",
+			entry: &ldap.Entry{
+				DN: "some-dn",
+				Attributes: []*ldap.EntryAttribute{
+					{
+						Name:   "pwdLastSet",
+						Values: []string{pwdResetTimeBeforeAuthTime},
+					},
+				},
+			},
+			wantErr: "parsing time \"01 Nov 21 15:04 MST\" as \"2006-01-02T15:04:05.999999999Z07:00\": cannot parse \"ov 21 15:04 MST\" as \"2006\"",
+		},
+		{
+			name:     "ldap timestamp is in the wrong format",
+			authTime: authTime,
+			entry: &ldap.Entry{
+				DN: "some-dn",
+				Attributes: []*ldap.EntryAttribute{
+					{
+						Name:   "pwdLastSet",
+						Values: []string{"invalid"},
+					},
+				},
+			},
+			wantErr: "couldn't parse as timestamp",
+		},
+		{
+			name:     "no value for pwdLastSet attribute",
+			authTime: authTime,
+			entry: &ldap.Entry{
+				DN:         "some-dn",
+				Attributes: []*ldap.EntryAttribute{},
+			},
+			wantErr: "expected to find 1 value for pwdLastSet attribute, but found 0",
+		},
+		{
+			name:     "too many values for pwdLastSet attribute",
+			authTime: authTime,
+			entry: &ldap.Entry{
+				DN: "some-dn",
+				Attributes: []*ldap.EntryAttribute{
+					{
+						Name:   "pwdLastSet",
+						Values: []string{"val1", "val2"},
+					},
+				},
+			},
+			wantErr: "expected to find 1 value for pwdLastSet attribute, but found 2",
+		},
+	}
+	for _, test := range tests {
+		tt := test
+		t.Run(tt.name, func(t *testing.T) {
+			pwdChangedResult, err := PwdResetSinceLogin(tt.entry, tt.authTime)
+			require.Equal(t, tt.wantResult, pwdChangedResult)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				require.Equal(t, tt.wantErr, err.Error())
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestWin32TimestampToTime(t *testing.T) {
+	happyPasswordChangeTime := time.Date(2021, time.January, 2, 0, 12, 21, 0, time.UTC).UTC()
+	tests := []struct {
+		name            string
+		timestampString string
+		wantTime        *time.Time
+		wantErr         string
+	}{
+		{
+			name:            "happy case with a valid timestamp",
+			timestampString: "132540199410000000",
+			wantTime:        &happyPasswordChangeTime,
+		},
+		{
+			name:            "handles error with a string thats not a timestamp",
+			timestampString: "not timestamp",
+			wantErr:         "couldn't parse as timestamp",
+		},
+		{
+			name:            "handles error with too big of a timestamp",
+			timestampString: "132540199410000000000",
+			wantErr:         "couldn't parse as timestamp",
+		},
+	}
+
+	for _, test := range tests {
+		tt := test
+		t.Run(tt.name, func(t *testing.T) {
+			actualTime, err := win32timestampToTime(tt.timestampString)
+			require.Equal(t, tt.wantTime, actualTime)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				require.Equal(t, tt.wantErr, err.Error())
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }

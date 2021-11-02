@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -119,6 +120,9 @@ type ProviderConfig struct {
 	// GroupNameMappingOverrides are the mappings between an attribute name and a way to parse it as a group
 	// name when it comes out of LDAP.
 	GroupAttributeParsingOverrides map[string]func(*ldap.Entry) (string, error)
+
+	// RefreshAttributeChecks are extra checks that attributes in a refresh response are as expected.
+	RefreshAttributeChecks map[string]func(*ldap.Entry, string) (bool, error)
 }
 
 // UserSearchConfig contains information about how to search for users in the upstream LDAP IDP.
@@ -170,10 +174,14 @@ func (p *Provider) GetConfig() ProviderConfig {
 	return p.c
 }
 
-func (p *Provider) PerformRefresh(ctx context.Context, userDN string, expectedUsername string, expectedSubject string) error {
+// TODO rather than taking the login time... create some kind of StoredRefreshAttributes struct to pass around with username, subject, loginTime etc.
+//  so we can use it without bringing fosite code into upstreamldap.
+func (p *Provider) PerformRefresh(ctx context.Context, storedRefreshAttributes provider.StoredRefreshAttributes) error {
 	t := trace.FromContext(ctx).Nest("slow ldap refresh attempt", trace.Field{Key: "providerName", Value: p.GetName()})
 	defer t.LogIfLong(500 * time.Millisecond) // to help users debug slow LDAP searches
+	userDN := storedRefreshAttributes.DN
 	search := p.refreshUserSearchRequest(userDN)
+	// TODO pass ad-specific attributes to refreshUserSearchRequest
 
 	conn, err := p.dial(ctx)
 	if err != nil {
@@ -212,9 +220,9 @@ func (p *Provider) PerformRefresh(ctx context.Context, userDN string, expectedUs
 	if err != nil {
 		return err
 	}
-	if newUsername != expectedUsername {
+	if newUsername != storedRefreshAttributes.Username {
 		return fmt.Errorf(`searching for user "%s" returned a different username than the previous value. expected: "%s", actual: "%s"`,
-			userDN, expectedUsername, newUsername,
+			userDN, storedRefreshAttributes.Username, newUsername,
 		)
 	}
 
@@ -223,9 +231,19 @@ func (p *Provider) PerformRefresh(ctx context.Context, userDN string, expectedUs
 		return err
 	}
 	newSubject := downstreamsession.DownstreamLDAPSubject(newUID, *p.GetURL())
-	if newSubject != expectedSubject {
-		return fmt.Errorf(`searching for user "%s" produced a different subject than the previous value. expected: "%s", actual: "%s"`, userDN, expectedSubject, newSubject)
+	if newSubject != storedRefreshAttributes.Subject {
+		return fmt.Errorf(`searching for user "%s" produced a different subject than the previous value. expected: "%s", actual: "%s"`, userDN, storedRefreshAttributes.Subject, newSubject)
 	}
+
+	// TODO check that, for each of the extra (AD) attributes, its value is acceptable.
+	//  maybe we could just take the whole session?
+	//  but that breaks the abstraction layer... this code doesn't know about fosite.
+	//  so we'll have to get the AuthTime out.
+	//  maybe just always pass the authtime.
+	//  --> map[string]func
+	//  attributeName, function that takes the entry and the previous value (prev. only matters for pwdLastSet tho)
+	//  --> map[string]string
+	//  attributeName, previous value
 
 	// we checked that the user still exists and their information is the same, so just return.
 	return nil
@@ -824,4 +842,45 @@ func getDomainFromDistinguishedName(distinguishedName string) (string, error) {
 		return "", fmt.Errorf("did not find domain components in group dn: %s", distinguishedName)
 	}
 	return strings.Join(domainComponents[1:], "."), nil
+}
+
+func PwdResetSinceLogin(entry *ldap.Entry, authTime string) (bool, error) {
+	pwdLastSetWin32Format := entry.GetAttributeValues("pwdLastSet")
+	if len(pwdLastSetWin32Format) != 1 {
+		return false, fmt.Errorf("expected to find 1 value for pwdLastSet attribute, but found %d", len(pwdLastSetWin32Format)) // TODO
+	}
+	// convert to reasonable formats
+	pwdLastSetParsed, err := win32timestampToTime(pwdLastSetWin32Format[0])
+	if err != nil {
+		return false, err
+	}
+
+	authTimeParsed, err := time.Parse(time.RFC3339Nano, authTime)
+	if err != nil {
+		return false, err
+	}
+	// if pwdLastSet > authTime returnFalse
+	if pwdLastSetParsed.After(authTimeParsed) {
+		return true, nil
+	}
+	return false, nil
+}
+
+func win32timestampToTime(win32timestamp string) (*time.Time, error) {
+	// take a win32 timestamp (represented as the number of 100 ns intervals since
+	// January 1, 1601) and make a time.Time
+
+	const unixTimeBaseAsWin = 116444736000000000 // The unix base time (January 1, 1970 UTC) as ns since Win32 epoch (1601-01-01)
+	const hundredNsToSecFactor = 10000000
+
+	win32Time, err := strconv.ParseUint(win32timestamp, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't parse as timestamp")
+	}
+
+	unixsec := int64(win32Time-unixTimeBaseAsWin) / hundredNsToSecFactor
+	unixns := int64(win32Time % hundredNsToSecFactor)
+
+	convertedTime := time.Unix(unixsec, unixns).UTC()
+	return &convertedTime, nil
 }

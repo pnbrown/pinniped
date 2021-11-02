@@ -75,11 +75,6 @@ func NewHandler(
 
 func upstreamRefresh(ctx context.Context, accessRequest fosite.AccessRequester, providerCache oidc.UpstreamIdentityProvidersLister) error {
 	session := accessRequest.GetSession().(*psession.PinnipedSession)
-	downstreamUsername, err := getDownstreamUsernameFromPinnipedSession(session)
-	if err != nil {
-		return err
-	}
-	downstreamSubject := session.Fosite.Claims.Subject
 
 	customSessionData := session.Custom
 	if customSessionData == nil {
@@ -95,9 +90,9 @@ func upstreamRefresh(ctx context.Context, accessRequest fosite.AccessRequester, 
 	case psession.ProviderTypeOIDC:
 		return upstreamOIDCRefresh(ctx, customSessionData, providerCache)
 	case psession.ProviderTypeLDAP:
-		return upstreamLDAPRefresh(ctx, customSessionData, providerCache, downstreamUsername, downstreamSubject)
+		return upstreamLDAPRefresh(ctx, providerCache, session)
 	case psession.ProviderTypeActiveDirectory:
-		return upstreamLDAPRefresh(ctx, customSessionData, providerCache, downstreamUsername, downstreamSubject)
+		return upstreamLDAPRefresh(ctx, providerCache, session)
 	default:
 		return errorsx.WithStack(errMissingUpstreamSessionInternalError)
 	}
@@ -170,7 +165,15 @@ func findOIDCProviderByNameAndValidateUID(
 		WithHintf("Provider %q of type %q from upstream session data was not found.", s.ProviderName, s.ProviderType))
 }
 
-func upstreamLDAPRefresh(ctx context.Context, s *psession.CustomSessionData, providerCache oidc.UpstreamIdentityProvidersLister, username string, subject string) error {
+func upstreamLDAPRefresh(ctx context.Context, providerCache oidc.UpstreamIdentityProvidersLister, session *psession.PinnipedSession) error {
+	username, err := getDownstreamUsernameFromPinnipedSession(session)
+	if err != nil {
+		return err
+	}
+	subject := session.Fosite.Claims.Subject
+
+	s := session.Custom
+
 	// if you have neither a valid ldap session config nor a valid active directory session config
 	if (s.LDAP == nil || s.LDAP.UserDN == "") && (s.ActiveDirectory == nil || s.ActiveDirectory.UserDN == "") {
 		return errorsx.WithStack(errMissingUpstreamSessionInternalError)
@@ -182,7 +185,11 @@ func upstreamLDAPRefresh(ctx context.Context, s *psession.CustomSessionData, pro
 		return err
 	}
 	// run PerformRefresh
-	err = p.PerformRefresh(ctx, dn, username, subject)
+	err = p.PerformRefresh(ctx, provider.StoredRefreshAttributes{
+		Username: username,
+		Subject:  subject,
+		DN:       dn,
+	})
 	if err != nil {
 		return errorsx.WithStack(errUpstreamRefreshError.WithHintf(
 			"Upstream refresh failed using provider %q of type %q.",

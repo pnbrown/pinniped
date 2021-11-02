@@ -90,7 +90,14 @@ type UpstreamLDAPIdentityProviderI interface {
 	authenticators.UserAuthenticator
 
 	// PerformRefresh performs a refresh against the upstream LDAP identity provider
-	PerformRefresh(ctx context.Context, userDN string, expectedUsername string, expectedSubject string) error
+	PerformRefresh(ctx context.Context, storedRefreshAttributes StoredRefreshAttributes) error
+}
+
+type StoredRefreshAttributes struct {
+	Username string
+	Subject  string
+	DN       string
+	AuthTime string
 }
 
 type DynamicUpstreamIDPProvider interface {
