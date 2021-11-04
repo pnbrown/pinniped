@@ -41,6 +41,7 @@ const (
 	defaultLDAPPort                         = uint16(389)
 	defaultLDAPSPort                        = uint16(636)
 	sAMAccountNameAttribute                 = "sAMAccountName"
+	pwdLastSetAttribute                     = "pwdLastSet"
 )
 
 // Conn abstracts the upstream LDAP communication protocol (mostly for testing).
@@ -122,7 +123,7 @@ type ProviderConfig struct {
 	GroupAttributeParsingOverrides map[string]func(*ldap.Entry) (string, error)
 
 	// RefreshAttributeChecks are extra checks that attributes in a refresh response are as expected.
-	RefreshAttributeChecks map[string]func(*ldap.Entry, string) (bool, error)
+	RefreshAttributeChecks map[string]func(*ldap.Entry, provider.StoredRefreshAttributes) error
 }
 
 // UserSearchConfig contains information about how to search for users in the upstream LDAP IDP.
@@ -174,14 +175,11 @@ func (p *Provider) GetConfig() ProviderConfig {
 	return p.c
 }
 
-// TODO rather than taking the login time... create some kind of StoredRefreshAttributes struct to pass around with username, subject, loginTime etc.
-//  so we can use it without bringing fosite code into upstreamldap.
 func (p *Provider) PerformRefresh(ctx context.Context, storedRefreshAttributes provider.StoredRefreshAttributes) error {
 	t := trace.FromContext(ctx).Nest("slow ldap refresh attempt", trace.Field{Key: "providerName", Value: p.GetName()})
 	defer t.LogIfLong(500 * time.Millisecond) // to help users debug slow LDAP searches
 	userDN := storedRefreshAttributes.DN
 	search := p.refreshUserSearchRequest(userDN)
-	// TODO pass ad-specific attributes to refreshUserSearchRequest
 
 	conn, err := p.dial(ctx)
 	if err != nil {
@@ -234,17 +232,12 @@ func (p *Provider) PerformRefresh(ctx context.Context, storedRefreshAttributes p
 	if newSubject != storedRefreshAttributes.Subject {
 		return fmt.Errorf(`searching for user "%s" produced a different subject than the previous value. expected: "%s", actual: "%s"`, userDN, storedRefreshAttributes.Subject, newSubject)
 	}
-
-	// TODO check that, for each of the extra (AD) attributes, its value is acceptable.
-	//  maybe we could just take the whole session?
-	//  but that breaks the abstraction layer... this code doesn't know about fosite.
-	//  so we'll have to get the AuthTime out.
-	//  maybe just always pass the authtime.
-	//  --> map[string]func
-	//  attributeName, function that takes the entry and the previous value (prev. only matters for pwdLastSet tho)
-	//  --> map[string]string
-	//  attributeName, previous value
-
+	for attribute, validateFunc := range p.c.RefreshAttributeChecks {
+		err = validateFunc(userEntry, storedRefreshAttributes)
+		if err != nil {
+			return fmt.Errorf(`validation for attribute "%s" failed during upstream refresh: %w`, attribute, err)
+		}
+	}
 	// we checked that the user still exists and their information is the same, so just return.
 	return nil
 }
@@ -659,7 +652,7 @@ func (p *Provider) refreshUserSearchRequest(dn string) *ldap.SearchRequest {
 		TimeLimit:    90,
 		TypesOnly:    false,
 		Filter:       "(objectClass=*)", // we already have the dn, so the filter doesn't matter
-		Attributes:   p.userSearchRequestedAttributes(),
+		Attributes:   p.refreshAttributes(),
 		Controls:     nil, // this could be used to enable paging, but we're already limiting the result max size
 	}
 }
@@ -684,6 +677,14 @@ func (p *Provider) groupSearchRequestedAttributes() []string {
 	default:
 		return []string{p.c.GroupSearch.GroupNameAttribute}
 	}
+}
+
+func (p *Provider) refreshAttributes() []string {
+	attributes := p.userSearchRequestedAttributes()
+	for k := range p.c.RefreshAttributeChecks {
+		attributes = append(attributes, k)
+	}
+	return attributes
 }
 
 func (p *Provider) userSearchFilter(username string) string {
@@ -844,33 +845,31 @@ func getDomainFromDistinguishedName(distinguishedName string) (string, error) {
 	return strings.Join(domainComponents[1:], "."), nil
 }
 
-func PwdResetSinceLogin(entry *ldap.Entry, authTime string) (bool, error) {
-	pwdLastSetWin32Format := entry.GetAttributeValues("pwdLastSet")
+func PwdUnchangedSinceLogin(entry *ldap.Entry, attributes provider.StoredRefreshAttributes) error {
+	authTime := attributes.AuthTime
+	pwdLastSetWin32Format := entry.GetAttributeValues(pwdLastSetAttribute)
 	if len(pwdLastSetWin32Format) != 1 {
-		return false, fmt.Errorf("expected to find 1 value for pwdLastSet attribute, but found %d", len(pwdLastSetWin32Format)) // TODO
+		return fmt.Errorf("expected to find 1 value for %s attribute, but found %d", pwdLastSetAttribute, len(pwdLastSetWin32Format))
 	}
-	// convert to reasonable formats
+	// convert to a time.Time
 	pwdLastSetParsed, err := win32timestampToTime(pwdLastSetWin32Format[0])
 	if err != nil {
-		return false, err
+		return err
 	}
 
-	authTimeParsed, err := time.Parse(time.RFC3339Nano, authTime)
-	if err != nil {
-		return false, err
+	// if pwdLastSet > authTime, that means that the password has been changed since the initial login.
+	// return an error so the user is prompted to log in again.
+	if pwdLastSetParsed.After(authTime) {
+		return fmt.Errorf("password has changed since login. login time: %s, password set time: %s", authTime, pwdLastSetParsed)
 	}
-	// if pwdLastSet > authTime returnFalse
-	if pwdLastSetParsed.After(authTimeParsed) {
-		return true, nil
-	}
-	return false, nil
+	return nil
 }
 
 func win32timestampToTime(win32timestamp string) (*time.Time, error) {
 	// take a win32 timestamp (represented as the number of 100 ns intervals since
 	// January 1, 1601) and make a time.Time
 
-	const unixTimeBaseAsWin = 116444736000000000 // The unix base time (January 1, 1970 UTC) as ns since Win32 epoch (1601-01-01)
+	const unixTimeBaseAsWin = 116444736000000000 // The unix base time (January 1, 1970 UTC) as 100 ns since Win32 epoch (1601-01-01)
 	const hundredNsToSecFactor = 10000000
 
 	win32Time, err := strconv.ParseUint(win32timestamp, 10, 64)

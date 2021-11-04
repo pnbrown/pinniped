@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/url"
 	"sync"
+	"time"
 
 	"golang.org/x/oauth2"
 	"k8s.io/apimachinery/pkg/types"
@@ -97,7 +98,7 @@ type StoredRefreshAttributes struct {
 	Username string
 	Subject  string
 	DN       string
-	AuthTime string
+	AuthTime time.Time
 }
 
 type DynamicUpstreamIDPProvider interface {

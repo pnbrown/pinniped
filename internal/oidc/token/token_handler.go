@@ -184,11 +184,15 @@ func upstreamLDAPRefresh(ctx context.Context, providerCache oidc.UpstreamIdentit
 	if err != nil {
 		return err
 	}
+	if session.IDTokenClaims().AuthTime.IsZero() {
+		return errorsx.WithStack(errMissingUpstreamSessionInternalError)
+	}
 	// run PerformRefresh
 	err = p.PerformRefresh(ctx, provider.StoredRefreshAttributes{
 		Username: username,
 		Subject:  subject,
 		DN:       dn,
+		AuthTime: session.IDTokenClaims().AuthTime,
 	})
 	if err != nil {
 		return errorsx.WithStack(errUpstreamRefreshError.WithHintf(

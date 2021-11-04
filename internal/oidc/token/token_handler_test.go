@@ -1923,6 +1923,45 @@ func TestRefreshGrant(t *testing.T) {
 			},
 		},
 		{
+			name: "auth time is the zero value", // time.Times can never be nil, but it is possible that it would be the zero value which would mean something's wrong
+			idps: oidctestutil.NewUpstreamIDPListerBuilder().WithLDAP(&oidctestutil.TestUpstreamLDAPIdentityProvider{
+				Name:        ldapUpstreamName,
+				ResourceUID: ldapUpstreamResourceUID,
+				URL:         ldapUpstreamURL,
+			}),
+			authcodeExchange: authcodeExchangeInputs{
+				modifyAuthRequest: func(r *http.Request) { r.Form.Set("scope", "openid offline_access") },
+				customSessionData: happyLDAPCustomSessionData,
+				want: happyAuthcodeExchangeTokenResponseForOpenIDAndOfflineAccess(
+					happyLDAPCustomSessionData,
+				),
+			},
+			modifyRefreshTokenStorage: func(t *testing.T, oauthStore *oidc.KubeStorage, refreshToken string) {
+				refreshTokenSignature := getFositeDataSignature(t, refreshToken)
+				firstRequester, err := oauthStore.GetRefreshTokenSession(context.Background(), refreshTokenSignature, nil)
+				require.NoError(t, err)
+				session := firstRequester.GetSession().(*psession.PinnipedSession)
+				fositeSessionClaims := session.Fosite.IDTokenClaims()
+				fositeSessionClaims.AuthTime = time.Time{}
+				session.Fosite.Claims = fositeSessionClaims
+				err = oauthStore.DeleteRefreshTokenSession(context.Background(), refreshTokenSignature)
+				require.NoError(t, err)
+				err = oauthStore.CreateRefreshTokenSession(context.Background(), refreshTokenSignature, firstRequester)
+				require.NoError(t, err)
+			},
+			refreshRequest: refreshRequestInputs{
+				want: tokenEndpointResponseExpectedValues{
+					wantStatus: http.StatusInternalServerError,
+					wantErrorResponseBody: here.Doc(`
+						{
+							"error":             "error",
+							"error_description": "There was an internal server error. Required upstream data not found in session."
+						}
+					`),
+				},
+			},
+		},
+		{
 			name: "when the ldap provider in the session storage is found but has the wrong resource UID during the refresh request",
 			idps: oidctestutil.NewUpstreamIDPListerBuilder().WithLDAP(&oidctestutil.TestUpstreamLDAPIdentityProvider{
 				Name:        ldapUpstreamName,
