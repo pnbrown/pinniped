@@ -75,7 +75,6 @@ func NewHandler(
 
 func upstreamRefresh(ctx context.Context, accessRequest fosite.AccessRequester, providerCache oidc.UpstreamIdentityProvidersLister) error {
 	session := accessRequest.GetSession().(*psession.PinnipedSession)
-
 	customSessionData := session.Custom
 	if customSessionData == nil {
 		return errorsx.WithStack(errMissingUpstreamSessionInternalError)
@@ -113,9 +112,9 @@ func upstreamOIDCRefresh(ctx context.Context, s *psession.CustomSessionData, pro
 
 	refreshedTokens, err := p.PerformRefresh(ctx, s.OIDC.UpstreamRefreshToken)
 	if err != nil {
-		return errorsx.WithStack(errUpstreamRefreshError.WithHintf(
-			"Upstream refresh failed using provider %q of type %q.",
-			s.ProviderName, s.ProviderType).WithWrap(err))
+		return errorsx.WithStack(errUpstreamRefreshError.WithHint(
+			"Upstream refresh failed.",
+		).WithWrap(err).WithDebugf("provider name: %q, provider type: %q", s.ProviderName, s.ProviderType))
 	}
 
 	// Upstream refresh may or may not return a new ID token. From the spec:
@@ -128,8 +127,7 @@ func upstreamOIDCRefresh(ctx context.Context, s *psession.CustomSessionData, pro
 		_, err = p.ValidateToken(ctx, refreshedTokens, "")
 		if err != nil {
 			return errorsx.WithStack(errUpstreamRefreshError.WithHintf(
-				"Upstream refresh returned an invalid ID token using provider %q of type %q.",
-				s.ProviderName, s.ProviderType).WithWrap(err))
+				"Upstream refresh returned an invalid ID token.").WithWrap(err).WithDebugf("provider name: %q, provider type: %q", s.ProviderName, s.ProviderType))
 		}
 	} else {
 		plog.Debug("upstream refresh request did not return a new ID token",
@@ -162,7 +160,7 @@ func findOIDCProviderByNameAndValidateUID(
 		}
 	}
 	return nil, errorsx.WithStack(errUpstreamRefreshError.
-		WithHintf("Provider %q of type %q from upstream session data was not found.", s.ProviderName, s.ProviderType))
+		WithHint("Provider from upstream session data was not found.").WithDebugf("provider name: %q, provider type: %q", s.ProviderName, s.ProviderType))
 }
 
 func upstreamLDAPRefresh(ctx context.Context, providerCache oidc.UpstreamIdentityProvidersLister, session *psession.PinnipedSession) error {
@@ -175,7 +173,9 @@ func upstreamLDAPRefresh(ctx context.Context, providerCache oidc.UpstreamIdentit
 	s := session.Custom
 
 	// if you have neither a valid ldap session config nor a valid active directory session config
-	if (s.LDAP == nil || s.LDAP.UserDN == "") && (s.ActiveDirectory == nil || s.ActiveDirectory.UserDN == "") {
+	validLDAP := s.ProviderType == psession.ProviderTypeLDAP && s.LDAP != nil && s.LDAP.UserDN != ""
+	validAD := s.ProviderType == psession.ProviderTypeActiveDirectory && s.ActiveDirectory != nil && s.ActiveDirectory.UserDN != ""
+	if !(validLDAP || validAD) {
 		return errorsx.WithStack(errMissingUpstreamSessionInternalError)
 	}
 
@@ -195,9 +195,8 @@ func upstreamLDAPRefresh(ctx context.Context, providerCache oidc.UpstreamIdentit
 		AuthTime: session.IDTokenClaims().AuthTime,
 	})
 	if err != nil {
-		return errorsx.WithStack(errUpstreamRefreshError.WithHintf(
-			"Upstream refresh failed using provider %q of type %q.",
-			s.ProviderName, s.ProviderType).WithWrap(err))
+		return errorsx.WithStack(errUpstreamRefreshError.WithHint(
+			"Upstream refresh failed.").WithWrap(err).WithDebugf("provider name: %q, provider type: %q", s.ProviderName, s.ProviderType))
 	}
 
 	return nil
@@ -220,16 +219,15 @@ func findLDAPProviderByNameAndValidateUID(
 	for _, p := range providers {
 		if p.GetName() == s.ProviderName {
 			if p.GetResourceUID() != s.ProviderUID {
-				return nil, "", errorsx.WithStack(errUpstreamRefreshError.WithHintf(
-					"Provider %q of type %q from upstream session data has changed its resource UID since authentication.",
-					s.ProviderName, s.ProviderType))
+				return nil, "", errorsx.WithStack(errUpstreamRefreshError.WithHint(
+					"Provider from upstream session data has changed its resource UID since authentication.").WithDebugf("provider name: %q, provider type: %q", s.ProviderName, s.ProviderType))
 			}
 			return p, dn, nil
 		}
 	}
 
 	return nil, "", errorsx.WithStack(errUpstreamRefreshError.
-		WithHintf("Provider %q of type %q from upstream session data was not found.", s.ProviderName, s.ProviderType))
+		WithHint("Provider from upstream session data was not found.").WithDebugf("provider name: %q, provider type: %q", s.ProviderName, s.ProviderType))
 }
 
 func getDownstreamUsernameFromPinnipedSession(session *psession.PinnipedSession) (string, error) {
@@ -241,6 +239,9 @@ func getDownstreamUsernameFromPinnipedSession(session *psession.PinnipedSession)
 	if downstreamUsernameInterface == nil {
 		return "", errorsx.WithStack(errMissingUpstreamSessionInternalError)
 	}
-	downstreamUsername := downstreamUsernameInterface.(string)
+	downstreamUsername, ok := downstreamUsernameInterface.(string)
+	if !ok || len(downstreamUsername) == 0 {
+		return "", errorsx.WithStack(errMissingUpstreamSessionInternalError)
+	}
 	return downstreamUsername, nil
 }

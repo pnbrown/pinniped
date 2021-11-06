@@ -20,9 +20,9 @@ import (
 	"github.com/go-ldap/ldap/v3"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
-	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
 
+	"go.pinniped.dev/internal/authenticators"
 	"go.pinniped.dev/internal/certauthority"
 	"go.pinniped.dev/internal/endpointaddr"
 	"go.pinniped.dev/internal/mocks/mockldapconn"
@@ -153,17 +153,16 @@ func TestEndUserAuthentication(t *testing.T) {
 	}
 
 	// The auth response which matches the exampleUserSearchResult and exampleGroupSearchResult.
-	expectedAuthResponse := func(editFunc func(r *user.DefaultInfo)) *authenticator.Response {
+	expectedAuthResponse := func(editFunc func(r *user.DefaultInfo)) *authenticators.Response {
 		u := &user.DefaultInfo{
 			Name:   testUserSearchResultUsernameAttributeValue,
 			UID:    base64.RawURLEncoding.EncodeToString([]byte(testUserSearchResultUIDAttributeValue)),
 			Groups: []string{testGroupSearchResultGroupNameAttributeValue1, testGroupSearchResultGroupNameAttributeValue2},
-			Extra:  map[string][]string{"userDN": {testUserSearchResultDNValue}},
 		}
 		if editFunc != nil {
 			editFunc(u)
 		}
-		return &authenticator.Response{User: u}
+		return &authenticators.Response{User: u, DN: testUserSearchResultDNValue}
 	}
 
 	tests := []struct {
@@ -176,7 +175,7 @@ func TestEndUserAuthentication(t *testing.T) {
 		dialError                  error
 		wantError                  string
 		wantToSkipDial             bool
-		wantAuthResponse           *authenticator.Response
+		wantAuthResponse           *authenticators.Response
 		wantUnauthenticated        bool
 		skipDryRunAuthenticateUser bool // tests about when the end user bind fails don't make sense for DryRunAuthenticateUser()
 	}{
@@ -501,13 +500,13 @@ func TestEndUserAuthentication(t *testing.T) {
 			bindEndUserMocks: func(conn *mockldapconn.MockConn) {
 				conn.EXPECT().Bind(testUserSearchResultDNValue, testUpstreamPassword).Times(1)
 			},
-			wantAuthResponse: &authenticator.Response{
+			wantAuthResponse: &authenticators.Response{
 				User: &user.DefaultInfo{
 					Name:   testUserSearchResultUsernameAttributeValue,
 					UID:    base64.RawURLEncoding.EncodeToString([]byte(testUserSearchResultUIDAttributeValue)),
 					Groups: []string{"a", "b", "c"},
-					Extra:  map[string][]string{"userDN": {testUserSearchResultDNValue}},
 				},
+				DN: testUserSearchResultDNValue,
 			},
 		},
 		{
@@ -1549,9 +1548,8 @@ func TestUpstreamRefresh(t *testing.T) {
 			wantErr: "validation for attribute \"pwdLastSet\" failed during upstream refresh: password has changed since login. login time: 2021-11-01 23:43:19 +0000 UTC, password set time: 2021-11-02 17:14:40 +0000 UTC",
 		},
 	}
-
-	for _, test := range tests {
-		tt := test
+	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			t.Cleanup(ctrl.Finish)
