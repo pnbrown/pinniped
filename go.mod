@@ -8,7 +8,7 @@ require (
 	github.com/creack/pty v1.1.14
 	github.com/davecgh/go-spew v1.1.1
 	github.com/go-ldap/ldap/v3 v3.4.1
-	github.com/go-logr/logr v0.4.0
+	github.com/go-logr/logr v1.2.0
 	github.com/go-logr/stdr v0.4.0
 	github.com/gofrs/flock v0.8.1
 	github.com/golang/mock v1.6.0
@@ -42,7 +42,7 @@ require (
 	k8s.io/client-go v0.22.2
 	k8s.io/component-base v0.22.2
 	k8s.io/gengo v0.0.0-20210203185629-de9496dff47b
-	k8s.io/klog/v2 v2.10.0
+	k8s.io/klog/v2 v2.80.1
 	k8s.io/kube-aggregator v0.22.1
 	k8s.io/utils v0.0.0-20210819203725-bdf08cb9a70a
 	sigs.k8s.io/yaml v1.2.0
